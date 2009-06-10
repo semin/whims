@@ -59,7 +59,8 @@ int main() {
 		for (q = p + 1; q < dcount; q++) {
 			r++;
 			u = usr(descriptors[p].descriptor, descriptors[q].descriptor);
-			printf("0\t%d\t%d\t%f\n", descriptors[p].no, descriptors[q].no, u);
+                        if (u > 0.8)
+			    printf("0\t%d\t%d\t%f\n", descriptors[p].no, descriptors[q].no, u);
 		}
 	}
 

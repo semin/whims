@@ -3,8 +3,10 @@
 require "rubygems"
 require "narray"
 
-#matrix_file = "egor60.prob.mat"
-matrix_file = "egor60.logo.mat"
+matrix_file = ARGV.first
+
+raise "must provide file to read!" if matrix_file.nil?
+
 arrays = []
 array_names = []
 current_array = nil

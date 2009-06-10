@@ -3,7 +3,8 @@
 require "rubygems"
 require "narray"
 
-matrix_file = "egor60.prob.mat"
+matrix_file = ARGV.first
+
 arrays = []
 array_names = []
 current_array = nil
@@ -26,7 +27,8 @@ IO.foreach(matrix_file) do |line|
   elsif (line =~ /^\S\s+(.*)$/) && tag
     current_array.concat($1.strip.split(/\s+/).map(&:to_f))
   else
-    raise "Something wrong!: #{line}"
+    #raise "Something wrong!: #{line}"
+    next
   end
 end
 
