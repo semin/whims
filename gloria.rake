@@ -4,6 +4,7 @@ require "logger"
 require "fileutils"
 require "fork_manager"
 require "active_support"
+require "net/smtp"
 
 include FileUtils
 
@@ -29,6 +30,8 @@ PDBNUC_DIR      = File.join(CLEAN_DIR, "PDBNUC")
 PICPDBCHAIN_DIR = File.join(CLEAN_DIR, "PICPDBCHAIN")
 QUAT_DIR        = File.join(CLEAN_DIR, "QUAT")
 QUATPAIR_DIR    = File.join(CLEAN_DIR, "QUATPAIR")
+MY_EMAIL        = ENV[:MY_EMAIL]
+GLORIA_EMAIL    = ENV[:GLORIA_EMAIL]
 
 # logger
 $logger_formatter = Logger::Formatter.new
@@ -50,30 +53,32 @@ def refresh_dir(dir)
   $logger.info("RECREATE #{dir}: done")
 end
 
-def send_mail(opts={})
-  opts = {
-    :to           => "semin@cryst.bioc.cam.ac.uk",
-    :from         => "semin@cryst.bioc.cam.ac.uk",
-    :subject      => "[Gloria] HBPLUS and JOY on spunky",
-    :message      => "Please find attached log files",
-    :attachement  => nil
-  }.merge(opts)
+def send_email(subject,
+               message,
+               options = {})
 
-  cmd =  %Q"mail -s '#{opts[:subject]}'"
-  cmd += %Q" -a #{opts[:attachement]}" if opts[:attachement]
-  cmd += %Q" -r #{opts[:from]}"
-  cmd += %Q" #{opts[:to]}"
-  cmd += %Q" <<EOT\n"
-  cmd += %Q"#{opts[:message]}\n"
-  cmd += %Q"EOT\n"
+  opts = {  :from => MY_EMAIL,
+            :from_alias => 'Semin Lee',
+            :to => GLORIA_EMAIL,
+            :to_alias => 'Gloria' }.merge(options)
 
-  sh cmd
+  msg = <<END_OF_MESSAGE
+From: #{opts[:from_alias]} <#{opts[:from]}>
+To: #{opts[:to_alias]} <#{opts[:to]}>
+Subject: #{subject}
+  
+#{message}
+END_OF_MESSAGE
+
+  Net::SMTP.start('localhost') do |smtp|
+    smtp.send_message msg, opts[:from], opts[:to]
+  end
 end
 
 def run_naccess(ori_dir)
   str_dir   = File.join(ori_dir, "Structures")
   nac_dir   = File.join(ori_dir, "NACCESS")
-  pdb_files = Dir[File.join(str_dir, "*.pdb")].sort
+  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
 
   refresh_dir(nac_dir) unless RESUME
 
@@ -134,7 +139,7 @@ def run_naccess(ori_dir)
         end
 
         rm(pdb_file)
-        move(Dir["*"], nac_dir)
+        move(FileList["*"], nac_dir)
         rm_rf(work_dir)
         chdir(cwd)
       end
@@ -172,7 +177,7 @@ end
 def run_hbplus(ori_dir, hbadd = false)
   str_dir   = File.join(ori_dir, "Structures")
   hbp_dir   = File.join(ori_dir, "HBPLUS")
-  pdb_files = Dir[File.join(str_dir, "*.pdb")].sort
+  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
 
   refresh_dir(hbp_dir) unless RESUME
 
@@ -267,7 +272,7 @@ def run_hbplus(ori_dir, hbadd = false)
         end
 
         rm(pdb_file)
-        move(Dir["*"], hbp_dir)
+        move(FileList["*"], hbp_dir)
         rm_rf(work_dir)
         chdir(cwd)
       end
@@ -305,7 +310,7 @@ end
 def run_joy(ori_dir)
   str_dir   = File.join(ori_dir, "Structures")
   joy_dir   = File.join(ori_dir, "JOY")
-  pdb_files = Dir[File.join(str_dir, "*.pdb")].sort
+  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
 
   refresh_dir(joy_dir) unless RESUME
 
@@ -469,17 +474,17 @@ namespace :unzip do
     str_dir = File.join(UNCLEAN_DIR, "Structures")
     refresh_dir(str_dir)
 
-    zipped_pdb_files = Dir[File.join(ZIPPED_PDB_DIR, "*.ent.gz")].sort
+    zipped_pdb_files = FileList[File.join(ZIPPED_PDB_DIR, "*.ent.gz")].sort
 
-    #fmanager = ForkManager.new(MAX_FORK)
-    #fmanager.manage do
+    fmanager = ForkManager.new(MAX_FORK)
+    fmanager.manage do
       zipped_pdb_files.each_with_index do |zipped_pdb_file, i|
-        #fmanager.fork do
+        fmanager.fork do
           unzipped_pdb_file = File.join(str_dir, File.basename(zipped_pdb_file, '.ent.gz').sub(/pdb/, '') + '.pdb')
-          sh("gzip -cd #{zipped_pdb_file} 1> #{unzipped_pdb_file}")
-        #end
+          system "gzip -cd #{zipped_pdb_file} 1> #{unzipped_pdb_file}"
+        end
       end
-    #end
+    end
 
     ent_file = "/BiO/Mirror/PDB/derived_data/pdb_entry_type.txt"
 
@@ -488,15 +493,15 @@ namespace :unzip do
     no_pnuc = `cut -f 2 #{ent_file} | grep -c -E "^prot-nuc$"`.chomp.to_i
     no_carb = `cut -f 2 #{ent_file} | grep -c -E "^carb$"`.chomp.to_i
 
-    message = "Total #{zipped_pdb_files.size} PDB files have been uncompressed\n"
-    message += "\nNo. of protein only structures: #{no_prot}"
-    message += "\nNo. of nucleic acid only structures: #{no_nuc}"
-    message += "\nNo. of protein-nucleic acid complex structures: #{no_pnuc}"
-    message += "\nNo. of carbohydrate only structures: #{no_carb}"
+    msg = "Total #{zipped_pdb_files.size} PDB files have been uncompressed.\n"
+    msg += "\nNo. of protein only structures: #{no_prot}"
+    msg += "\nNo. of nucleic acid only structures: #{no_nuc}"
+    msg += "\nNo. of protein-nucleic acid complex structures: #{no_pnuc}"
+    msg += "\nNo. of carbohydrate only structures: #{no_carb}"
 
-    send_mail(:to => "gloria@cryst.bioc.cam.ac.uk",
-              :subject => "[Gloria] PDB mirror update",
-              :message => message)
+    send_email("[Gloria] PDB mirror update", msg,
+               :to => "gloria@cryst.bioc.cam.ac.uk",
+               :to_alias => "Gloria")
   end
 
 end

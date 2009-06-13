@@ -2,6 +2,7 @@ require "rubygems"
 require "logger"
 require "fileutils"
 require "date"
+require "net/smtp"
 
 include FileUtils
 
@@ -15,6 +16,8 @@ $config = {
   :db_user                  => ENV["DB_USER"],
   :db_pass                  => ENV["DB_PASS"],
   :db_manager               => ENV["DB_USER"],
+  :my_email                 => ENV["MY_EMAIL"],
+  :gloria_email             => ENV["GLORIA_EMAIL"],
   :schema_load_sql_file     => "DB_LOADER_SCHEMA.sql",
   :schema_load_mod_sql_file => "DB_LOADER_SCHEMA_MOD.sql",
   :schema_drop_sql_file     => "DB_LOADER_SCHEMA_DROP.sql",
@@ -36,6 +39,28 @@ $log_file     = STDOUT
 $logger       = Logger.new($log_file)
 $logger.level = Logger::INFO
 
+def send_email(from = $config[:my_email],
+               from_alias = 'Semin Lee',
+               to = $config[:gloria_email],
+               to_alias = 'Gloria',
+               subject = "[Gloria] MMCIF on spunky updated",
+               message = "MMCIF database has been updated.")
+  msg = <<END_OF_MESSAGE
+From: #{from_alias} <#{from}>
+To: #{to_alias} <#{to}>
+Subject: #{subject}
+  
+#{message}
+END_OF_MESSAGE
+
+  Net::SMTP.start('localhost') do |smtp|
+    smtp.send_message msg, from, to
+  end
+end
+
+
+# Tasks
+
 desc "Simply just build MMCIF database!"
 task :default => [
 #  "check:week",
@@ -46,9 +71,9 @@ task :default => [
   "create:dumps",
   "drop:tables",
   "create:tables",
-#  "modify:load_sql",
+  "modify:load_sql",
   "import:dumps",
-#  "send:log"
+  "send:email"
 ]
 
 
@@ -89,7 +114,7 @@ namespace :prepare do
   desc "Uncompress and copy mmCIF files to working directory"
   task :files do
 
-    zipped_files = Dir[$config[:mmcif_mirror_dir] + "/*.gz"]
+    zipped_files = FileList[$config[:mmcif_mirror_dir] + "/*.gz"]
 
     zipped_files.each_with_index do |zipped_file, i|
       unzipped_file = File.join($config[:temp_dir], File.basename(zipped_file, ".gz"))
@@ -110,7 +135,7 @@ namespace :create do
   task :list do
 
     File.open($config[:temp_dir] + "/LIST", 'w') do |file|
-      file.puts Dir[File.join($config[:temp_dir], "*.cif")].map { |f| File.basename(f) }
+      file.puts FileList[File.join($config[:temp_dir], "*.cif")].map { |f| File.basename(f) }
     end
     $logger.info "Creating a LIST file: done"
   end
@@ -225,17 +250,9 @@ end
 namespace :send do
 
   desc "Send log to Gloria team"
-  task :log do
+  task :email do
 
-    email_cmd =  %Q^mail -s "[Gloria] MMCIF database update"^
-    email_cmd += %Q^ -a #{$log_file} ^ if File.size? $log_file
-    email_cmd += %Q^ -r semin@cryst.bioc.cam.ac.uk^
-    email_cmd += %Q^ gloria@cryst.bioc.cam.ac.uk^
-    email_cmd += %Q^ <<EOT\n^
-    email_cmd += %Q^MMCIF database has been updated.\n^
-    email_cmd += %Q^EOT\n^
+    send_email
 
-    sh email_cmd
   end
-
 end
