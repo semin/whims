@@ -37,13 +37,13 @@ def main(argv = [__name__]):
     zap.CalcPotentialGrid(grid)
     zap.CalcAtomPotentials(atom_pot)
 
-    OEPerceiveResidues(mol, OEPreserveResInfo_All)
-    hv = OEHierView(mol)
-
     surf = OESurface()
     OEMakeAccessibleSurface(surf, mol)
     #OEMakeSurfaceFromGrid(surf, grid, 0.5)
     OESetSurfacePotentials(surf, grid)
+
+    OEPerceiveResidues(mol, OEPreserveResInfo_All)
+    hv = OEHierView(mol)
 
     atom_to_vertices = {}
 
