@@ -22,8 +22,8 @@ LIBS = -L$(LIBDIR) \
 #CXX = /usr/local/bin/g++
 CXX = g++
 RM = rm -f
-CXXFLAGS =  -W -Wall    -O3 -fomit-frame-pointer -ffast-math -arch i386 -msse3
-LFLAGS =  -arch i386 -msse3 -march=nocona -Wl,-x
+CXXFLAGS = -W -Wall -O3 -fomit-frame-pointer -ffast-math -msse3
+LFLAGS = -msse3 -Wl -x
 
 PROGRAMS = calculate_electrostatic_potentials
 
