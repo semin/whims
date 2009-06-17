@@ -23,7 +23,7 @@ LIBS = -L$(LIBDIR) \
 CXX = g++
 RM = rm -f
 CXXFLAGS = -W -Wall -O3 -fomit-frame-pointer -ffast-math
-LFLAGS = -s
+LFLAGS = -Wl
 
 PROGRAMS = calculate_electrostatic_potentials
 
