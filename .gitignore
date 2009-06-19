@@ -2,3 +2,4 @@
 *.o
 Makefile
 calculate_electrostatic_potentials
+usr
