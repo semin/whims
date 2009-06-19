@@ -24,7 +24,8 @@ int main(int argc, char *argv[])
     oemolistream ifs(argv[1]);
 
     OEGraphMol mol;
-    OEReadMolecule(ifs, mol);
+    //OEReadMolecule(ifs, mol);
+    OEReadPDBFile(ifs, mol, OEPDBIFlag::ALL);
     OEAssignBondiVdWRadii(mol);    
     OEMMFFAtomTypes(mol);
     OEMMFF94PartialCharges(mol);
@@ -92,7 +93,7 @@ int main(int argc, char *argv[])
                          << residue->GetResidueNumber() << ", "
                          << residue->GetResidueName() << ", "
                          << atom->GetIdx() << ", "
-                         << atom->GetName() << ","
+                         << atom->GetName() << ", "
                          << atom->GetFormalCharge() << ", "
                          << atom->GetPartialCharge() << ", "
                          << atom_asa[atom->GetIdx()] << ", "
