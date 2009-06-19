@@ -89,15 +89,15 @@ int main(int argc, char *argv[])
                         asa_pot /= vec.size();
                     }
 
-                    cout << chain->GetChainID() << ", "
+                    cout << chain->GetChainID()         << ", "
                          << residue->GetResidueNumber() << ", "
-                         << residue->GetResidueName() << ", "
-                         << atom->GetIdx() << ", "
-                         << atom->GetName() << ", "
-                         << atom->GetFormalCharge() << ", "
-                         << atom->GetPartialCharge() << ", "
-                         << atom_asa[atom->GetIdx()] << ", "
-                         << atom_pot[atom->GetIdx()] << ", "
+                         << residue->GetResidueName()   << ", "
+                         << atom->GetIdx()              << ", "
+                         << atom->GetName()             << ", "
+                         << atom->GetFormalCharge()     << ", "
+                         << atom->GetPartialCharge()    << ", "
+                         << atom_asa[atom->GetIdx()]    << ", "
+                         << atom_pot[atom->GetIdx()]    << ", "
                          << asa_pot << endl;
                 }
             }
