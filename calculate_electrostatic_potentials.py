@@ -16,7 +16,8 @@ def main(argv = [__name__]):
         OEThrow.Fatal("Unable to open %s for reading" % argv[1])
 
     mol = OEGraphMol()
-    OEReadMolecule(ifs, mol)  
+    #OEReadMolecule(ifs, mol)  
+    OEReadPDBFile(ifs, mol, OEPDBIFlag_All)  
     OEAssignBondiVdWRadii(mol)
     OEMMFFAtomTypes(mol)
     OEMMFF94PartialCharges(mol)
