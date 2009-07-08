@@ -8,4 +8,4 @@ LOCAL_MIRROR_DIR="/BiO/Mirror/PDB"
 LFTP="/usr/bin/lftp"
 LOG="/BiO/Temp/mirror_PDB.log"
 
-${LFTP} -c "mirror -c -e --verbose=3 --log=${LOG} --parallel=4 ftp://${REMOTE_SERVER}/${REMOTE_MIRROR_DIR} ${LOCAL_MIRROR_DIR}"
+${LFTP} -c "mirror -c -e --verbose=1 --log=${LOG} --parallel=4 ftp://${REMOTE_SERVER}/${REMOTE_MIRROR_DIR} ${LOCAL_MIRROR_DIR}"
