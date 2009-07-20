@@ -12,7 +12,8 @@ def main(argv):
         print
         sys.exit(2)
 
-    log.minimal()
+    #log.minimal()
+    log.none()
     env = environ()
     env.io.atom_files_directory = ['.']
     aln = alignment(env)
