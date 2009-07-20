@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Illustrates the SALIGN multiple structure/sequence alignment
 import sys
 from modeller import *
