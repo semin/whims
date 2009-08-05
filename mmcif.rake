@@ -1,15 +1,15 @@
 require "rubygems"
 require "logger"
-require "fileutils"
 require "date"
+require "pathname"
 require "net/smtp"
 
 include FileUtils
 
 $config = {
-  :mmcif_mirror_dir         => "/BiO/Mirror/PDB/data/structures/all/mmCIF",
-  :schema_map_file          => "/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif",
-  :db_loader_bin            => "/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader",
+  :mmcif_mirror_dir         => Pathname.new("/BiO/Mirror/PDB/data/structures/all/mmCIF"),
+  :schema_map_file          => Pathname.new("~/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
+  :db_loader_bin            => Pathname.new("~/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
   :db_host                  => ENV["DB_HOST"],
   :db_name                  => "MMCIF",
   :db_dbms                  => "mysql",
@@ -24,7 +24,7 @@ $config = {
   :data_load_sql_file       => "DB_LOADER_LOAD.sql",
   :field_delimeter          => "'@\\t'",
   :row_delimeter            => "'#\\n'",
-  :temp_dir                 => "/BiO/Temp/MMCIF",
+  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF_TEM"),
 }
 
 $logger_formatter = Logger::Formatter.new
@@ -114,10 +114,10 @@ namespace :prepare do
   desc "Uncompress and copy mmCIF files to working directory"
   task :files do
 
-    zipped_files = FileList[$config[:mmcif_mirror_dir] + "/*.gz"]
+    zipped_files = Dir[$config[:mmcif_mirror_dir].join("*.gz").to_s]
 
     zipped_files.each_with_index do |zipped_file, i|
-      unzipped_file = File.join($config[:temp_dir], File.basename(zipped_file, ".gz"))
+      unzipped_file = $config[:temp_dir].join(File.basename(zipped_file, ".gz"))
       sh "gzip -cd #{zipped_file} > #{unzipped_file}"
 
       $logger.debug "Uncompressing '#{zipped_file}' to '#{unzipped_file}': done (#{i+1}/#{zipped_files.size})"
@@ -134,8 +134,8 @@ namespace :create do
   desc "Create a LIST file"
   task :list do
 
-    File.open($config[:temp_dir] + "/LIST", 'w') do |file|
-      file.puts FileList[File.join($config[:temp_dir], "*.cif")].map { |f| File.basename(f) }
+    File.open($config[:temp_dir].join("LIST"), 'w') do |file|
+      file.puts Dir[$config[:temp_dir].join("*.cif").to_s].map { |f| File.basename(f) }
     end
     $logger.info "Creating a LIST file: done"
   end
@@ -165,7 +165,7 @@ namespace :create do
        "-h #{$config[:db_host]} " +
        "-u #{$config[:db_user]} " +
        "-p#{$config[:db_pass]} " +
-       "< #{File.join($config[:temp_dir], $config[:schema_load_sql_file])}")
+       "< #{$config[:temp_dir].join($config[:schema_load_sql_file])}")
 
     $logger.info "Creating MMCIF tables: done"
   end
@@ -202,7 +202,7 @@ namespace :drop do
        "-h #{$config[:db_host]} " +
        "-u #{$config[:db_user]} " +
        "-p#{$config[:db_pass]} " +
-       "< #{File.join($config[:temp_dir], $config[:schema_drop_sql_file])}")
+       "< #{$config[:temp_dir].join($config[:schema_drop_sql_file])}")
 
     $logger.info "Dropping MMCIF tables: done"
   end
@@ -234,7 +234,7 @@ namespace :modify do
 
   desc "Modify DB_LOADER_LOAD.sql"
   task :load_sql do
-    sql_file      = File.join($config[:temp_dir], $config[:data_load_sql_file])
+    sql_file      = $config[:temp_dir].join($config[:data_load_sql_file])
     load_sql      = IO.readlines(sql_file)
     atom_site_sql = load_sql.slice!(3..6)
 
