@@ -1,37 +1,39 @@
 require "rubygems"
 require "open3"
 require "logger"
-require "fileutils"
 require "fork_manager"
 require "active_support"
 require "net/smtp"
 
 include FileUtils
 
+RakeFileUtils.verbose(false)
+
 # global configurations
-RESUME          = (ENV["RESUME"].blank? || ENV["RESUME"] =~ /true/) ? true : false
-MAX_FORK        = ENV["MAX_FORK"].blank? ? 1 : ENV["MAX_FORK"].to_i
-CLEAN_BIN       = "/BiO/Install/hbplus/clean"
-HBPLUS_BIN      = "/BiO/Install/hbplus/hbplus"
-HBADD_BIN       = "/BiO/Install/hbadd/hbadd"
-NACCESS_PATH    = "/BiO/Install/naccess"
-NACCESS_BIN     = File.join(NACCESS_PATH, "naccess")
-JOY_BIN         = "/BiO/Install/joy/joy"
-ZIPPED_PDB_DIR  = "/BiO/Mirror/PDB/data/structures/all/pdb"
-HET_DICT_FILE   = "/BiO/Mirror/PDB/data/monomers/het_dictionary.txt"
-TEMP_DIR        = "/BiO/Temp"
-UNCLEAN_DIR     = "/BiO/Store/PDB/UNCLEAN"
-CLEAN_DIR       = "/BiO/Store/PDB/CLEAN"
-DOMAIN_DIR      = File.join(CLEAN_DIR, "DOMAIN")
-PDB_DIR         = File.join(CLEAN_DIR, "PDB")
-PDBCHAIN_DIR    = File.join(CLEAN_DIR, "PDBCHAIN")
-PDBLIG_DIR      = File.join(CLEAN_DIR, "PDBLIG")
-PDBNUC_DIR      = File.join(CLEAN_DIR, "PDBNUC")
-PICPDBCHAIN_DIR = File.join(CLEAN_DIR, "PICPDBCHAIN")
-QUAT_DIR        = File.join(CLEAN_DIR, "QUAT")
-QUATPAIR_DIR    = File.join(CLEAN_DIR, "QUATPAIR")
+RESUME          = (ENV["RESUME"].blank? or
+                   ENV["RESUME"] =~ /true/i or
+                   ENV["RESUME"].to_i == 1) ? true : false
 MY_EMAIL        = ENV[:MY_EMAIL]
 GLORIA_EMAIL    = ENV[:GLORIA_EMAIL]
+CLEAN_BIN       = Pathname.new("/BiO/Install/hbplus/clean")
+HBPLUS_BIN      = Pathname.new("/BiO/Install/hbplus/hbplus")
+HBADD_BIN       = Pathname.new("/BiO/Install/hbadd/hbadd")
+NACCESS_PATH    = Pathname.new("/BiO/Install/naccess")
+NACCESS_BIN     = NACCESS_PATH.join("naccess")
+JOY_BIN         = Pathname.new("/BiO/Install/joy/joy")
+ZIPPED_PDB_DIR  = Pathname.new("/BiO/Mirror/PDB/data/structures/all/pdb")
+HET_DICT_FILE   = Pathname.new("/BiO/Mirror/PDB/data/monomers/het_dictionary.txt")
+TEMP_DIR        = Pathname.new("/BiO/Temp")
+UNCLEAN_DIR     = Pathname.new("/BiO/Store/PDB/UNCLEAN")
+CLEAN_DIR       = Pathname.new("/BiO/Store/PDB/CLEAN")
+DOMAIN_DIR      = CLEAN_DIR.join("DOMAIN")
+PDB_DIR         = CLEAN_DIR.join("PDB")
+PDBCHAIN_DIR    = CLEAN_DIR.join("PDBCHAIN")
+PDBLIG_DIR      = CLEAN_DIR.join("PDBLIG")
+PDBNUC_DIR      = CLEAN_DIR.join("PDBNUC")
+PICPDBCHAIN_DIR = CLEAN_DIR.join("PICPDBCHAIN")
+QUAT_DIR        = CLEAN_DIR.join("QUAT")
+QUATPAIR_DIR    = CLEAN_DIR.join("QUATPAIR")
 
 # logger
 $logger_formatter = Logger::Formatter.new
@@ -75,10 +77,11 @@ END_OF_MESSAGE
   end
 end
 
-def run_naccess(ori_dir)
-  str_dir   = File.join(ori_dir, "Structures")
-  nac_dir   = File.join(ori_dir, "NACCESS")
-  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
+def run_naccess(dir)
+  dir       = Pathname.new(dir)
+  str_dir   = dir.join("Structures")
+  nac_dir   = dir.join("NACCESS")
+  pdb_files = Dir[str_dir.join("*.pdb").to_s].sort
 
   refresh_dir(nac_dir) unless RESUME
 
@@ -86,73 +89,58 @@ def run_naccess(ori_dir)
   tried_pdbs    = []
   failed_pdbs   = []
 
-  fmanager = ForkManager.new(MAX_FORK)
-  fmanager.manage do
+  pdb_files.each_with_index do |pdb_file, i|
+    stem = File.basename(pdb_file, ".pdb")
 
-    pdb_files.each_with_index do |pdb_file, i|
-      pdb_stem = File.basename(pdb_file, ".pdb")
+    if (File.size?(File.join(nac_dir, "#{stem}.asa")) &&
+        File.size?(File.join(nac_dir, "#{stem}.rsa")))
+      skipped_pdbs << stem
+      $logger.info "Skipped #{pdb_file}"
+      next
+    end
 
-      if (File.size?(File.join(nac_dir, "#{pdb_stem}.asa")) &&
-          File.size?(File.join(nac_dir, "#{pdb_stem}.rsa")))
-        skipped_pdbs << pdb_stem
-        $logger.info("SKIP #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-        next
-      end
+    tried_pdbs << stem
 
-      tried_pdbs << pdb_stem
+    # preprocesses
+    cwd = pwd
+    work_dir = nac_dir.join(stem)
+    mkdir_p work_dir
+    chdir work_dir
+    cp pdb_file, "."
+    pdb_file = stem + ".pdb"
 
-      fmanager.fork do
-        # preprocesses
-        cwd = pwd
-        work_dir = File.join(nac_dir, pdb_stem)
-        mkdir_p(work_dir)
-        chdir(work_dir)
-        cp(pdb_file, ".")
-        pdb_file = pdb_stem + ".pdb"
+    # run NACCESS
+    pdb_code      = stem.match(/^(\S{4})/)[1]
+    new_pdb_file  = stem + ".new"
+    naccess_input = File.exists?(new_pdb_file) ? new_pdb_file : pdb_file
+    naccess_cmd   = "#{NACCESS_BIN} #{naccess_input} -p 1.40 -r #{NACCESS_PATH}/vdw.radii -s #{NACCESS_PATH}/standard.data -z 0.05"
 
-        # CLEAN
-#        File.open(pdb_stem + ".clean.log", "w") do |log|
-#          IO.popen(CLEAN_BIN, "r+") do |pipe|
-#            pipe.puts pdb_file
-#            log.puts pipe.readlines
-#          end
-#        end
-
-        $logger.info("CLEAN #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-
-        # NACCESS
-        pdb_code      = pdb_stem.match(/(\S{4})/)[1]
-        new_pdb_file  = pdb_stem + ".new"
-        naccess_input = File.exists?(new_pdb_file) ? new_pdb_file : pdb_file
-        naccess_cmd   = "#{NACCESS_BIN} #{naccess_input} -p 1.40 -r #{NACCESS_PATH}/vdw.radii -s #{NACCESS_PATH}/standard.data -z 0.05"
-
-        File.open(pdb_stem + ".naccess.log", "w") do |log|
-          IO.popen(naccess_cmd, "r") do |pipe|
-            log.puts pipe.readlines
-          end
-        end
-
-        if pdb_code != pdb_stem
-          mv(pdb_code + ".asa", pdb_stem + ".asa") if File.exists?(pdb_code + ".asa")
-          mv(pdb_code + ".rsa", pdb_stem + ".rsa") if File.exists?(pdb_code + ".rsa")
-          mv(pdb_code + ".log", pdb_stem + ".log") if File.exists?(pdb_code + ".log")
-        end
-
-        rm(pdb_file)
-        move(FileList["*"], nac_dir)
-        rm_rf(work_dir)
-        chdir(cwd)
-      end
-
-      if (File.size?(File.join(nac_dir, "#{pdb_stem}.asa")) &&
-          File.size?(File.join(nac_dir, "#{pdb_stem}.rsa")))
-        $logger.info("NACCESS #{naccess_input}: done (#{i+1}/#{pdb_files.size})")
-      else
-        failed_pdbs << pdb_stem
-        $logger.warn("NACCESS #{naccess_input}: failed (#{i+1}/#{pdb_files.size})")
+    File.open(stem + ".naccess.log", "w") do |log|
+      IO.popen(naccess_cmd, "r") do |pipe|
+        log.puts pipe.readlines
       end
     end
+
+    if pdb_code != stem
+      mv(pdb_code + ".asa", stem + ".asa") if File.exists?(pdb_code + ".asa")
+      mv(pdb_code + ".rsa", stem + ".rsa") if File.exists?(pdb_code + ".rsa")
+      mv(pdb_code + ".log", stem + ".log") if File.exists?(pdb_code + ".log")
+    end
+
+    rm pdb_file
+    move Dir["*"], nac_dir
+    rm_rf work_dir
+    chdir cwd
+
+    if (File.size?(File.join(nac_dir, "#{stem}.asa")) &&
+        File.size?(File.join(nac_dir, "#{stem}.rsa")))
+      $logger.info "NACCESS #{naccess_input}: done (#{i+1}/#{pdb_files.size})"
+    else
+      failed_pdbs << stem
+      $logger.warn "NACCESS #{naccess_input}: failed (#{i+1}/#{pdb_files.size})"
+    end
   end
+
 
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
@@ -162,22 +150,19 @@ def run_naccess(ori_dir)
   msg += " (see a list of files below)" if failed_pdbs.size > 0
   msg += "\n\n(You can find more detailed log messages in /BiO/Temp/gloria.log)"
 
-  if tried_pdbs.size > 0
-    msg += "\n\n* List of NACCESS tried structures:\n"
-    msg += tried_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
   if failed_pdbs.size > 0
     msg += "\n\n* List of NACCESS failed structures:\n"
     msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
   end
 
-  send_mail(:subject => "[Gloria] NACCESS with #{str_dir}", :message => msg)
+  send_email("[Gloria] NACCESS with #{str_dir}", msg)
 end
 
-def run_hbplus(ori_dir, hbadd = false)
-  str_dir   = File.join(ori_dir, "Structures")
-  hbp_dir   = File.join(ori_dir, "HBPLUS")
-  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
+def run_hbplus(dir, hbadd = false)
+  dir       = Pathname.new(dir)
+  str_dir   = dir.join("Structures")
+  hbp_dir   = dir.join("HBPLUS")
+  pdb_files = Dir[str_dir.join("*.pdb").to_s].sort
 
   refresh_dir(hbp_dir) unless RESUME
 
@@ -185,107 +170,89 @@ def run_hbplus(ori_dir, hbadd = false)
   tried_pdbs    = []
   failed_pdbs   = []
 
-  fmanager = ForkManager.new(MAX_FORK)
-  fmanager.manage do
+  pdb_files.each_with_index do |pdb_file, i|
+    stem = File.basename(pdb_file, ".pdb")
 
-    pdb_files.each_with_index do |pdb_file, i|
-      pdb_stem = File.basename(pdb_file, ".pdb")
+    if File.size?(File.join(hbp_dir, "#{stem}.hb2"))
+      skipped_pdbs << stem
+      $logger.info "Skipped #{pdb_file}"
+      next
+    end
 
-      if File.size?(File.join(hbp_dir, "#{pdb_stem}.hb2"))
-        skipped_pdbs << pdb_stem
-        $logger.info("SKIP #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-        next
-      end
+    tried_pdbs << stem
 
-      tried_pdbs << pdb_stem
+    # preprocesses
+    cwd = pwd
+    work_dir = hbp_dir.join(stem)
+    mkdir_p work_dir
+    chdir work_dir
+    cp pdb_file, "."
+    pdb_file = stem + ".pdb"
 
-      fmanager.fork do
-        # preprocesses
-        cwd = pwd
-        work_dir = File.join(hbp_dir, pdb_stem)
-        mkdir_p(work_dir)
-        chdir(work_dir)
-        cp(pdb_file, ".")
-        pdb_file = pdb_stem + ".pdb"
+    # run NACCESS
+    pdb_code      = stem.match(/^(\S{4})/)[1]
+    new_pdb_file  = stem + ".new"
+    naccess_input = File.exists?(new_pdb_file) ? new_pdb_file : pdb_file
+    naccess_cmd   = "#{NACCESS_BIN} #{naccess_input} -p 1.40 -r #{NACCESS_PATH}/vdw.radii -s #{NACCESS_PATH}/standard.data -z 0.05"
 
-        # CLEAN
-#        File.open(pdb_stem + ".clean.log", "w") do |log|
-#          IO.popen(CLEAN_BIN, "r+") do |pipe|
-#            pipe.puts pdb_file
-#            log.puts pipe.readlines
-#          end
-#        end
-#
-#        $logger.info("CLEAN #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-
-        # NACCESS
-        pdb_code      = pdb_stem.match(/(\S{4})/)[1]
-        new_pdb_file  = pdb_stem + ".new"
-        naccess_input = File.exists?(new_pdb_file) ? new_pdb_file : pdb_file
-        naccess_cmd   = "#{NACCESS_BIN} #{naccess_input} -p 1.40 -r #{NACCESS_PATH}/vdw.radii -s #{NACCESS_PATH}/standard.data -z 0.05"
-
-        File.open(pdb_stem + ".naccess.log", "w") do |log|
-          IO.popen(naccess_cmd, "r") do |pipe|
-            log.puts pipe.readlines
-          end
-        end
-
-        if pdb_code != pdb_stem
-          mv(pdb_code + ".asa", pdb_stem + ".asa") if File.exists?(pdb_code + ".asa")
-          mv(pdb_code + ".rsa", pdb_stem + ".rsa") if File.exists?(pdb_code + ".rsa")
-          mv(pdb_code + ".log", pdb_stem + ".log") if File.exists?(pdb_code + ".log")
-        end
-
-        $logger.info("NACCESS #{naccess_input}: done (#{i+1}/#{pdb_files.size})")
-
-        # HBADD
-        if hbadd
-          if File.exists? new_pdb_file
-            hbadd_cmd = "#{HBADD_BIN} #{new_pdb_file} #{HET_DICT_FILE}"
-          else
-            hbadd_cmd = "#{HBADD_BIN} #{pdb_file} #{HET_DICT_FILE}"
-          end
-
-          File.open(pdb_code + ".hbadd.log", "w") do |log|
-            IO.popen(hbadd_cmd, "r") do |pipe|
-              log.puts pipe.readlines
-            end
-          end
-        end
-
-        # HBPLUS
-        if File.exists? new_pdb_file
-          hbplus_cmd = "#{HBPLUS_BIN} -x -R -q #{new_pdb_file} #{pdb_file}"
-        else
-          hbplus_cmd = "#{HBPLUS_BIN} -x -R -q #{pdb_file}"
-        end
-
-        if File.exists? "hbplus.rc"
-          mv("hbplus.rc", "#{pdb_code}.rc")
-          hbplus_cmd += " -f #{pdb_code}.rc"
-        end
-
-        File.open(pdb_stem + ".hbplus.log", "w") do |log|
-          IO.popen(hbplus_cmd, "r") do |pipe|
-            log.puts pipe.readlines
-          end
-        end
-
-        rm(pdb_file)
-        move(FileList["*"], hbp_dir)
-        rm_rf(work_dir)
-        chdir(cwd)
-      end
-
-      # post processes
-      if File.size?(File.join(hbp_dir, "#{pdb_stem}.hb2"))
-        $logger.info("HBPLUS #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-      else
-        failed_pdbs << pdb_stem
-        $logger.warn("HBPLUS #{pdb_file}: failed (#{i+1}/#{pdb_files.size})")
+    File.open(stem + ".naccess.log", "w") do |log|
+      IO.popen(naccess_cmd, "r") do |pipe|
+        log.puts pipe.readlines
       end
     end
+
+    if pdb_code != stem
+      mv(pdb_code + ".asa", stem + ".asa") if File.exists?(pdb_code + ".asa")
+      mv(pdb_code + ".rsa", stem + ".rsa") if File.exists?(pdb_code + ".rsa")
+      mv(pdb_code + ".log", stem + ".log") if File.exists?(pdb_code + ".log")
+    end
+
+    # HBADD
+    if hbadd
+      if File.exists? new_pdb_file
+        hbadd_cmd = "#{HBADD_BIN} #{new_pdb_file} #{HET_DICT_FILE}"
+      else
+        hbadd_cmd = "#{HBADD_BIN} #{pdb_file} #{HET_DICT_FILE}"
+      end
+
+      File.open(pdb_code + ".hbadd.log", "w") do |log|
+        IO.popen(hbadd_cmd, "r") do |pipe|
+          log.puts pipe.readlines
+        end
+      end
+    end
+
+    # HBPLUS
+    if File.exists? new_pdb_file
+      hbplus_cmd = "#{HBPLUS_BIN} -x -R -q #{new_pdb_file} #{pdb_file}"
+    else
+      hbplus_cmd = "#{HBPLUS_BIN} -x -R -q #{pdb_file}"
+    end
+
+    if File.exists? "hbplus.rc"
+      mv("hbplus.rc", "#{pdb_code}.rc")
+      hbplus_cmd += " -f #{pdb_code}.rc"
+    end
+
+    File.open(stem + ".hbplus.log", "w") do |log|
+      IO.popen(hbplus_cmd, "r") do |pipe|
+        log.puts pipe.readlines
+      end
+    end
+
+    rm pdb_file
+    move Dir["*"], hbp_dir
+    rm_rf work_dir
+    chdir cwd
+
+    if File.size?(hbp_dir.join("#{stem}.hb2"))
+      $logger.info "HBPLUS with #{pdb_file}: done (#{i+1}/#{pdb_files.size})"
+    else
+      failed_pdbs << stem
+      $logger.warn "HBPLUS with #{pdb_file}: failed (#{i+1}/#{pdb_files.size})"
+    end
   end
+
 
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
@@ -295,62 +262,53 @@ def run_hbplus(ori_dir, hbadd = false)
   msg += " (see a list of files below)" if failed_pdbs.size > 0
   msg += "\n\n(You can find more detailed log messages in /BiO/Temp/gloria.log)"
 
-  if tried_pdbs.size > 0
-    msg += "\n\n* List of HBPLUS tried structures:\n"
-    msg += tried_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
   if failed_pdbs.size > 0
     msg += "\n\n* List of HBPLUS failed structures:\n"
     msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
   end
 
-  send_mail(:subject => "[Gloria] HBPLUS with #{str_dir}", :message => msg)
+  send_email("[Gloria] HBPLUS with #{str_dir}", msg)
 end
 
-def run_joy(ori_dir)
-  str_dir   = File.join(ori_dir, "Structures")
-  joy_dir   = File.join(ori_dir, "JOY")
-  pdb_files = FileList[File.join(str_dir, "*.pdb")].sort
+def run_joy(dir)
+  dir       = Pathname.new(dir)
+  str_dir   = dir.join("Structures")
+  joy_dir   = dir.join("JOY")
+  pdb_files = Dir[str_dir.join("*.pdb").to_s].sort
 
   refresh_dir(joy_dir) unless RESUME
 
   cwd = pwd
-  chdir(joy_dir)
+  chdir joy_dir
 
   skipped_pdbs  = []
   tried_pdbs    = []
   failed_pdbs   = []
 
-  fmanager = ForkManager.new(MAX_FORK)
-  fmanager.manage do
+  pdb_files.each_with_index do |pdb_file, i|
+    stem = File.basename(pdb_file, '.pdb')
 
-    pdb_files.each_with_index do |pdb_file, i|
-      pdb_stem = File.basename(pdb_file, '.pdb')
+    if File.size? "#{stem}.tem"
+      skipped_pdbs << pdb_file
+      $logger.info "Skipped #{pdb_file}"
+      next
+    end
 
-      if File.size? "#{pdb_stem}.tem"
-        skipped_pdbs << pdb_stem
-        $logger.info("SKIP #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-        next
-      end
+    tried_pdbs << pdb_file
 
-      tried_pdbs << pdb_stem
+    cp pdb_file, '.'
+    system "#{JOY_BIN} #{stem}.pdb 1> #{stem}.joy.log 2>&1"
+    rm "#{stem}.pdb"
 
-      fmanager.fork do
-        cp(pdb_file, '.')
-        joy_cmd = "#{JOY_BIN} #{pdb_stem}.pdb"
-        sh(joy_cmd + " 1> #{pdb_stem}.joy.log 2>&1")
-        rm("#{pdb_stem}.pdb")
-      end
-
-      if File.size? "#{pdb_stem}.tem"
-        $logger.info("JOY #{pdb_file}: done (#{i+1}/#{pdb_files.size})")
-      else
-        failed_pdbs << pdb_stem
-        $logger.warn("JOY #{pdb_file}: failed (#{i+1}/#{pdb_files.size})")
-      end
+    if File.size? "#{stem}.tem"
+      $logger.info "JOY #{pdb_file}: done (#{i+1}/#{pdb_files.size})"
+    else
+      skipped_pdbs << pdb_file
+      $logger.warn "JOY #{pdb_file}: failed (#{i+1}/#{pdb_files.size})"
     end
   end
-  chdir(cwd)
+
+  chdir cwd
 
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
@@ -362,14 +320,14 @@ def run_joy(ori_dir)
 
   if tried_pdbs.size > 0
     msg += "\n\n* List of JOY tried structures:\n"
-    msg += tried_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
+    #msg += tried_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
   end
   if failed_pdbs.size > 0
     msg += "\n\n* List of JOY failed structures:\n"
     msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
   end
 
-  send_mail(:subject => "[Gloria] JOY with #{str_dir}", :message => msg)
+  send_email("[Gloria] JOY with #{str_dir}", msg)
 end
 
 namespace :do do
@@ -476,10 +434,10 @@ namespace :unzip do
 
     zipped_pdb_files = FileList[File.join(ZIPPED_PDB_DIR, "*.ent.gz")].sort
 
-    fmanager = ForkManager.new(MAX_FORK)
-    fmanager.manage do
+    fm = ForkManager.new(MAX_FORK)
+    fm.manage do
       zipped_pdb_files.each_with_index do |zipped_pdb_file, i|
-        fmanager.fork do
+        fm.fork do
           unzipped_pdb_file = File.join(str_dir, File.basename(zipped_pdb_file, '.ent.gz').sub(/pdb/, '') + '.pdb')
           system "gzip -cd #{zipped_pdb_file} 1> #{unzipped_pdb_file}"
         end
