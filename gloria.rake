@@ -10,11 +10,19 @@ include FileUtils
 RakeFileUtils.verbose(false)
 
 # global configurations
+MAX_FORK        = ENV["MAX_FORK"].blank? ? 1 : ENV["MAX_FORK"].to_i
 RESUME          = (ENV["RESUME"].blank? or
                    ENV["RESUME"] =~ /true/i or
                    ENV["RESUME"].to_i == 1) ? true : false
-MY_EMAIL        = ENV[:MY_EMAIL]
-GLORIA_EMAIL    = ENV[:GLORIA_EMAIL]
+VERBOSE         = case
+                  when ENV["VERBOSE"] =~ /debug/i then Logger::DEBUG
+                  when ENV["VERBOSE"] =~ /info/i  then Logger::INFO
+                  when ENV["VERBOSE"] =~ /warn/i  then Logger::WARN
+                  when ENV["VERBOSE"] =~ /error/i then Logger::ERROR
+                  else Logger::INFO
+                  end
+FROM_EMAIL      = ENV[:FROM_EMAIL] || "alicia@cryst.bioc.cam.ac.uk"
+TO_EMAIL        = ENV[:TO_EMAIL] || "gloria@cryst.bioc.cam.ac.uk"
 CLEAN_BIN       = Pathname.new("/BiO/Install/hbplus/clean")
 HBPLUS_BIN      = Pathname.new("/BiO/Install/hbplus/hbplus")
 HBADD_BIN       = Pathname.new("/BiO/Install/hbadd/hbadd")
@@ -46,27 +54,25 @@ end
 
 $log_file     = STDOUT
 $logger       = Logger.new($log_file)
-$logger.level = Logger::INFO
+$logger.level = VERBOSE
 
 # helper methods
 def refresh_dir(dir)
   rm_rf(dir) if File.exists?(dir)
   mkdir_p(dir)
-  $logger.info("RECREATE #{dir}: done")
+  $logger.info "RECREATE #{dir}: done"
 end
 
 def send_email(subject,
                message,
                options = {})
 
-  opts = {  :from => MY_EMAIL,
-            :from_alias => 'Semin Lee',
-            :to => GLORIA_EMAIL,
-            :to_alias => 'Gloria' }.merge(options)
+  opts = {  :from => FROM_EMAIL,
+            :to => TO_EMAIL }.merge(options)
 
   msg = <<END_OF_MESSAGE
-From: #{opts[:from_alias]} <#{opts[:from]}>
-To: #{opts[:to_alias]} <#{opts[:to]}>
+From: #{opts[:from]}
+To: #{opts[:to]}
 Subject: #{subject}
   
 #{message}
@@ -95,7 +101,7 @@ def run_naccess(dir)
     if (File.size?(File.join(nac_dir, "#{stem}.asa")) &&
         File.size?(File.join(nac_dir, "#{stem}.rsa")))
       skipped_pdbs << stem
-      $logger.info "Skipped #{pdb_file}"
+      $logger.debug "Skipped #{pdb_file}"
       next
     end
 
@@ -145,15 +151,7 @@ def run_naccess(dir)
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
   msg += "\n* No. of tried structures: #{tried_pdbs.size}"
-  msg += " (see a list of files below)" if tried_pdbs.size > 0
   msg += "\n* No. of failed structures: #{failed_pdbs.size}"
-  msg += " (see a list of files below)" if failed_pdbs.size > 0
-  msg += "\n\n(You can find more detailed log messages in /BiO/Temp/gloria.log)"
-
-  if failed_pdbs.size > 0
-    msg += "\n\n* List of NACCESS failed structures:\n"
-    msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
 
   send_email("[Gloria] NACCESS with #{str_dir}", msg)
 end
@@ -175,7 +173,7 @@ def run_hbplus(dir, hbadd = false)
 
     if File.size?(File.join(hbp_dir, "#{stem}.hb2"))
       skipped_pdbs << stem
-      $logger.info "Skipped #{pdb_file}"
+      $logger.debug "Skipped #{pdb_file}"
       next
     end
 
@@ -257,15 +255,7 @@ def run_hbplus(dir, hbadd = false)
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
   msg += "\n* No. of tried structures: #{tried_pdbs.size}"
-  msg += " (see a list of files below)" if tried_pdbs.size > 0
   msg += "\n* No. of failed structures: #{failed_pdbs.size}"
-  msg += " (see a list of files below)" if failed_pdbs.size > 0
-  msg += "\n\n(You can find more detailed log messages in /BiO/Temp/gloria.log)"
-
-  if failed_pdbs.size > 0
-    msg += "\n\n* List of HBPLUS failed structures:\n"
-    msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
 
   send_email("[Gloria] HBPLUS with #{str_dir}", msg)
 end
@@ -288,22 +278,23 @@ def run_joy(dir)
   pdb_files.each_with_index do |pdb_file, i|
     stem = File.basename(pdb_file, '.pdb')
 
-    if File.size? "#{stem}.tem"
+    if File.exists? "#{stem}.tem"
       skipped_pdbs << pdb_file
-      $logger.info "Skipped #{pdb_file}"
+      $logger.debug "Skipped #{pdb_file}"
       next
     end
 
     tried_pdbs << pdb_file
 
+    rm Dir["#{stem}.*"]
     cp pdb_file, '.'
     system "#{JOY_BIN} #{stem}.pdb 1> #{stem}.joy.log 2>&1"
     rm "#{stem}.pdb"
 
-    if File.size? "#{stem}.tem"
+    if File.exists? "#{stem}.tem"
       $logger.info "JOY #{pdb_file}: done (#{i+1}/#{pdb_files.size})"
     else
-      skipped_pdbs << pdb_file
+      failed_pdbs << pdb_file
       $logger.warn "JOY #{pdb_file}: failed (#{i+1}/#{pdb_files.size})"
     end
   end
@@ -313,41 +304,33 @@ def run_joy(dir)
   msg = "* No. of total structures: #{pdb_files.size}"
   msg += "\n* No. of skipped structures: #{skipped_pdbs.size}"
   msg += "\n* No. of tried structures: #{tried_pdbs.size}"
-  msg += " (see a list of files below)" if tried_pdbs.size > 0
   msg += "\n* No. of failed structures: #{failed_pdbs.size}"
-  msg += " (see a list of files below)" if failed_pdbs.size > 0
-  msg += "\n\n(You can find more detailed log messages in /BiO/Temp/gloria.log)"
 
-  if tried_pdbs.size > 0
-    msg += "\n\n* List of JOY tried structures:\n"
-    #msg += tried_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
-  if failed_pdbs.size > 0
-    msg += "\n\n* List of JOY failed structures:\n"
-    msg += failed_pdbs.each_with_index.map { |p, i| "#{i+1}: #{p}" }.join("\n")
-  end
-
-  send_email("[Gloria] JOY with #{str_dir}", msg)
+  send_email "[Gloria] JOY with #{str_dir}", msg
 end
 
-namespace :do do
-  desc "Run chores various flavors of CLEAN PDB Structures"
-  task :jobs => [
-  "joy:pdb",
-  "joy:pdbchain",
-  "joy:picpdbchain",
-  "joy:quat",
-  "joy:domain",
-  "hbplus:pdb",
-  "hbplus:pdbchain",
-  "hbplus:picpdbchain",
-  "hbplus:quat",
-  "hbplus:pdbnuc",
-  "naccess:quatpair"
+task :default do
+  $logger.warn "Usage: rake -f gloria.rake [Task] [Options]"
+end
+
+namespace :serve do
+
+  desc "Run HBPLUS, NACCESS, and JOY for various flavors of CLEAN PDB Structures"
+  task :alicia => [
+    "joy:pdb",
+    "joy:pdbchain",
+    "joy:picpdbchain",
+    "joy:quat",
+    "joy:domain",
+    "hbplus:pdb",
+    "hbplus:pdbchain",
+    "hbplus:picpdbchain",
+    "hbplus:quat",
+    "hbplus:pdbnuc",
+    "naccess:quatpair"
   ]
 end
 
-# tasks
 namespace :joy do
 
   desc "JOY with clean PDB files"
@@ -394,11 +377,6 @@ namespace :hbplus do
     run_hbplus(PICPDBCHAIN_DIR)
   end
 
-  desc "HBPLUS with clean PDBLIG files"
-  task :pdblig do
-    run_hbplus(PDBLIG_DIR, true)
-  end
-
   desc "HBPLUS with clean DOMAIN files"
   task :domain do
     run_hbplus(DOMAIN_DIR)
@@ -407,11 +385,6 @@ namespace :hbplus do
   desc "HBPLUS with clean QUAT files"
   task :quat do
     run_hbplus(QUAT_DIR)
-  end
-
-  desc "HBPLUS with clean PDBNUC files"
-  task :pdbnuc do
-    run_hbplus(PDBNUC_DIR)
   end
 
 end
@@ -459,7 +432,7 @@ namespace :unzip do
 
     send_email("[Gloria] PDB mirror update", msg,
                :to => "gloria@cryst.bioc.cam.ac.uk",
-               :to_alias => "Gloria")
+               :from => "semin@cryst.bioc.cam.ac.uk")
   end
 
 end
