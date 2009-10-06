@@ -8,8 +8,8 @@ include FileUtils
 
 $config = {
   :mmcif_mirror_dir         => Pathname.new("/BiO/Mirror/PDB/data/structures/all/mmCIF"),
-  :schema_map_file          => Pathname.new("~/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
-  :db_loader_bin            => Pathname.new("~/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
+  :schema_map_file          => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
+  :db_loader_bin            => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
   :db_host                  => ENV["DB_HOST"],
   :db_name                  => "MMCIF",
   :db_dbms                  => "mysql",
@@ -24,7 +24,7 @@ $config = {
   :data_load_sql_file       => "DB_LOADER_LOAD.sql",
   :field_delimeter          => "'@\\t'",
   :row_delimeter            => "'#\\n'",
-  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF_TEM"),
+  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF"),
 }
 
 $logger_formatter = Logger::Formatter.new
@@ -118,7 +118,7 @@ namespace :prepare do
 
     zipped_files.each_with_index do |zipped_file, i|
       unzipped_file = $config[:temp_dir].join(File.basename(zipped_file, ".gz"))
-      sh "gzip -cd #{zipped_file} > #{unzipped_file}"
+      system "gzip -cd #{zipped_file} > #{unzipped_file}"
 
       $logger.debug "Uncompressing '#{zipped_file}' to '#{unzipped_file}': done (#{i+1}/#{zipped_files.size})"
     end
@@ -147,11 +147,11 @@ namespace :create do
     cwd = pwd
     chdir $config[:temp_dir]
 
-    sh("#{$config[:db_loader_bin]} " +
-       "-map #{$config[:schema_map_file]} " +
-       "-server #{$config[:db_dbms]} " +
-       "-db #{$config[:db_name]} " +
-       "-schema")
+    system  "#{$config[:db_loader_bin]} " +
+            "-map #{$config[:schema_map_file]} " +
+            "-server #{$config[:db_dbms]} " +
+            "-db #{$config[:db_name]} " +
+            "-schema"
 
     $logger.info "Creating MMCIF schema: done"
     chdir cwd
@@ -161,11 +161,11 @@ namespace :create do
   desc "Create MMCIF tables"
   task :tables do
 
-    sh("mysql -f " +
-       "-h #{$config[:db_host]} " +
-       "-u #{$config[:db_user]} " +
-       "-p#{$config[:db_pass]} " +
-       "< #{$config[:temp_dir].join($config[:schema_load_sql_file])}")
+    system  "mysql -f " +
+            "-h #{$config[:db_host]} " +
+            "-u #{$config[:db_user]} " +
+            "-p#{$config[:db_pass]} " +
+            "< #{$config[:temp_dir].join($config[:schema_load_sql_file])}"
 
     $logger.info "Creating MMCIF tables: done"
   end
@@ -177,15 +177,15 @@ namespace :create do
     cwd = pwd
     chdir $config[:temp_dir]
 
-    sh("#{$config[:db_loader_bin]} " +
-       "-map #{$config[:schema_map_file]} " +
-       "-server #{$config[:db_dbms]} " +
-       "-db #{$config[:db_name]} " +
-       "-ft #{$config[:field_delimeter]} " +
-       "-rt #{$config[:row_delimeter]} " +
-       "-bcp " +
-       "-list LIST " +
-       "-revise revised_schema_mapping.cif")
+    system  "#{$config[:db_loader_bin]} " +
+            "-map #{$config[:schema_map_file]} " +
+            "-server #{$config[:db_dbms]} " +
+            "-db #{$config[:db_name]} " +
+            "-ft #{$config[:field_delimeter]} " +
+            "-rt #{$config[:row_delimeter]} " +
+            "-bcp " +
+            "-list LIST " +
+            "-revise revised_schema_mapping.cif"
 
     $logger.info "Creating MMCIF dump files: done"
 
@@ -198,11 +198,11 @@ namespace :drop do
   desc "Drop MMCIF tables"
   task :tables do
 
-    sh("mysql -f " +
-       "-h #{$config[:db_host]} " +
-       "-u #{$config[:db_user]} " +
-       "-p#{$config[:db_pass]} " +
-       "< #{$config[:temp_dir].join($config[:schema_drop_sql_file])}")
+    system  "mysql -f " +
+            "-h #{$config[:db_host]} " +
+            "-u #{$config[:db_user]} " +
+            "-p#{$config[:db_pass]} " +
+            "< #{$config[:temp_dir].join($config[:schema_drop_sql_file])}"
 
     $logger.info "Dropping MMCIF tables: done"
   end
@@ -218,11 +218,11 @@ namespace :import do
     cwd = pwd
     chdir $config[:temp_dir]
 
-    sh("mysql -f " +
-       "-h #{$config[:db_host]} " +
-       "-u #{$config[:db_user]} " +
-       "-p#{$config[:db_pass]} " +
-       "< #{$config[:data_load_sql_file]}")
+    system  "mysql -f " +
+            "-h #{$config[:db_host]} " +
+            "-u #{$config[:db_user]} " +
+            "-p#{$config[:db_pass]} " +
+            "< #{$config[:data_load_sql_file]}"
 
     $logger.info "Importing mmCIF dump files to #{$config[:db_host]}.#{$config[:db_name]}: done"
     chdir cwd
