@@ -1,6 +1,6 @@
 *~
 *.o
 Makefile
-calculate_electrostatic_potentials
+cep
 usr
 data
