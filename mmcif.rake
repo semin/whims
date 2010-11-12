@@ -11,8 +11,10 @@ $config = {
   :schema_map_file          => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
   :db_loader_bin            => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
   :db_host                  => ENV["DB_HOST"],
-  :db_name                  => "MMCIF",
-  :db_dbms                  => "mysql",
+  #:db_name                  => "MMCIF",
+  :db_name                  => "MMCIF_PGSQL",
+  #:db_dbms                  => "mysql",
+  :db_dbms                  => "pgsql",
   :db_user                  => ENV["DB_USER"],
   :db_pass                  => ENV["DB_PASS"],
   :db_manager               => ENV["DB_USER"],
@@ -22,9 +24,12 @@ $config = {
   :schema_load_mod_sql_file => "DB_LOADER_SCHEMA_MOD.sql",
   :schema_drop_sql_file     => "DB_LOADER_SCHEMA_DROP.sql",
   :data_load_sql_file       => "DB_LOADER_LOAD.sql",
-  :field_delimeter          => "'@\\t'",
-  :row_delimeter            => "'#\\n'",
-  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF"),
+  #:field_delimeter          => "'@\\t'",
+  :field_delimeter          => "'\\t'",
+  #:row_delimeter            => "'#\\n'",
+  :row_delimeter            => "'\\n'",
+  #:temp_dir                 => Pathname.new("/BiO/Temp/MMCIF"),
+  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF_PGSQL"),
 }
 
 $logger_formatter = Logger::Formatter.new
@@ -63,17 +68,17 @@ end
 
 desc "Simply just build MMCIF database!"
 task :default => [
-#  "check:week",
+  #"check:week",
   "prepare:temp_dir",
   "prepare:files",
   "create:list",
   "create:schema",
   "create:dumps",
-  "drop:tables",
-  "create:tables",
-  "modify:load_sql",
-  "import:dumps",
-  "send:email"
+  #"drop:tables",
+  #"create:tables",
+  #"modify:load_sql",
+  #"import:dumps",
+  #"send:email"
 ]
 
 
