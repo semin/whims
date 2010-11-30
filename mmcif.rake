@@ -8,17 +8,16 @@ include FileUtils
 
 $config = {
   :mmcif_mirror_dir         => Pathname.new("/BiO/Mirror/PDB/data/structures/all/mmCIF"),
-  :schema_map_file          => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
-  :db_loader_bin            => Pathname.new("/home/semin/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
-  :db_host                  => ENV["DB_HOST"],
-  #:db_name                  => "MMCIF",
-  :db_name                  => "MMCIF_PGSQL",
+  :schema_map_file          => Pathname.new("/BiO/Install/db-loader/db-loader-v4.0/test/schema_map_pdbx_na.cif"),
+  :db_loader_bin            => Pathname.new("/BiO/Install/db-loader/db-loader-v4.0/bin/db-loader"),
+  :db_host                  => '192.168.1.2',
+  :db_name                  => "MMCIF",
   :db_dbms                  => "mysql",
-  :db_user                  => ENV["DB_USER"],
-  :db_pass                  => ENV["DB_PASS"],
-  :db_manager               => ENV["DB_USER"],
-  :my_email                 => ENV["MY_EMAIL"],
-  :gloria_email             => ENV["GLORIA_EMAIL"],
+  :db_user                  => "alicia",
+  :db_pass                  => "scissors7",
+  :db_manager               => "alicia",
+  :my_email                 => "alicia@cryst.bioc.cam.ac.uk",
+  :gloria_email             => "gloria@cryst.bioc.cam.ac.uk",
   :schema_load_sql_file     => "DB_LOADER_SCHEMA.sql",
   :schema_load_mod_sql_file => "DB_LOADER_SCHEMA_MOD.sql",
   :schema_drop_sql_file     => "DB_LOADER_SCHEMA_DROP.sql",
@@ -27,8 +26,7 @@ $config = {
   :field_delimeter          => "'\\t'",
   #:row_delimeter            => "'#\\n'",
   :row_delimeter            => "'\\n'",
-  #:temp_dir                 => Pathname.new("/BiO/Temp/MMCIF"),
-  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF_PGSQL"),
+  :temp_dir                 => Pathname.new("/BiO/Temp/MMCIF"),
 }
 
 $logger_formatter = Logger::Formatter.new
@@ -43,12 +41,12 @@ $log_file     = STDOUT
 $logger       = Logger.new($log_file)
 $logger.level = Logger::INFO
 
-def send_email(from = $config[:my_email],
-               from_alias = 'Semin Lee',
-               to = $config[:gloria_email],
-               to_alias = 'Gloria',
-               subject = "[Gloria] MMCIF on spunky updated",
-               message = "MMCIF database has been updated.")
+def send_email(from       = $config[:my_email],
+               from_alias = 'Alicia Higueruelo',
+               to         = $config[:gloria_email],
+               to_alias   = 'Gloria',
+               subject    = "[Gloria] MMCIF on spunky updated",
+               message    = "MMCIF database has been updated.")
   msg = <<END_OF_MESSAGE
 From: #{from_alias} <#{from}>
 To: #{to_alias} <#{to}>
@@ -71,13 +69,15 @@ task :default => [
   "prepare:temp_dir",
   "prepare:files",
   "create:list",
+  "create:revised_schema_mapping",
+  "create:updated_schema_mapping",
   "create:schema",
   "create:dumps",
-  #"drop:tables",
-  #"create:tables",
-  #"modify:load_sql",
-  #"import:dumps",
-  #"send:email"
+  "drop:tables",
+  "create:tables",
+  "modify:load_sql",
+  "import:dumps",
+  "send:email"
 ]
 
 
@@ -144,6 +144,37 @@ namespace :create do
     $logger.info "Creating a LIST file: done"
   end
 
+  desc "Create a revised schema mapping file"
+  task :revised_schema_mapping do
+
+    cwd = pwd
+    chdir $config[:temp_dir]
+
+    system  "#{$config[:db_loader_bin]} " +
+            "-map #{$config[:schema_map_file]} " +
+            "-list LIST " +
+            "-revise revised_schema_mapping.cif"
+
+    $logger.info "Creating a revised schema mapping file: done"
+
+    chdir cwd
+  end
+
+  desc "Create an updated schema mapping file"
+  task :updated_schema_mapping do
+
+    cwd = pwd
+    chdir $config[:temp_dir]
+
+    system  "#{$config[:db_loader_bin]} " +
+            "-map #{$config[:schema_map_file]} " +
+            "-update updated_schema_mapping.cif " +
+            "-revise revised_schema_mapping.cif"
+
+    $logger.info "Creating an updated schema mapping file: done"
+
+    chdir cwd
+  end
 
   desc "Create MMCIF RDB schema"
   task :schema do
@@ -152,7 +183,8 @@ namespace :create do
     chdir $config[:temp_dir]
 
     system  "#{$config[:db_loader_bin]} " +
-            "-map #{$config[:schema_map_file]} " +
+            #"-map #{$config[:schema_map_file]} " +
+            "-map updated_schema_mapping.cif " +
             "-server #{$config[:db_dbms]} " +
             "-db #{$config[:db_name]} " +
             "-schema"
@@ -161,6 +193,27 @@ namespace :create do
     chdir cwd
   end
 
+  desc "Create MMCIF dump files"
+  task :dumps do
+
+    cwd = pwd
+    chdir $config[:temp_dir]
+
+    system  "#{$config[:db_loader_bin]} " +
+            #"-map #{$config[:schema_map_file]} " +
+            "-map updated_schema_mapping.cif " +
+            "-server #{$config[:db_dbms]} " +
+            "-db #{$config[:db_name]} " +
+            "-ft #{$config[:field_delimeter]} " +
+            "-rt #{$config[:row_delimeter]} " +
+            "-bcp " +
+            "-list LIST " +
+            "-revise revised_schema_mapping.cif"
+
+    $logger.info "Creating MMCIF dump files: done"
+
+    chdir cwd
+  end
 
   desc "Create MMCIF tables"
   task :tables do
@@ -174,27 +227,6 @@ namespace :create do
     $logger.info "Creating MMCIF tables: done"
   end
 
-
-  desc "Create MMCIF dump files"
-  task :dumps do
-
-    cwd = pwd
-    chdir $config[:temp_dir]
-
-    system  "#{$config[:db_loader_bin]} " +
-            "-map #{$config[:schema_map_file]} " +
-            "-server #{$config[:db_dbms]} " +
-            "-db #{$config[:db_name]} " +
-            "-ft #{$config[:field_delimeter]} " +
-            "-rt #{$config[:row_delimeter]} " +
-            "-bcp " +
-            "-list LIST " +
-            "-revise revised_schema_mapping.cif"
-
-    $logger.info "Creating MMCIF dump files: done"
-
-    chdir cwd
-  end
 end
 
 namespace :drop do
